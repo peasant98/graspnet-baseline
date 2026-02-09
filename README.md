@@ -16,16 +16,56 @@ Baseline model for "GraspNet-1Billion: A Large-Scale Benchmark for General Objec
 ![teaser](doc/teaser.png)
 
 ## Requirements
-- Python 3
-- PyTorch 1.6
+- Python 3.11+
+- PyTorch 2.7.1+ with CUDA 12.8
+- [uv](https://docs.astral.sh/uv/) (recommended package manager)
 - Open3d >=0.8
-- TensorBoard 2.3
-- NumPy
-- SciPy
-- Pillow
-- tqdm
+- Viser (for interactive browser-based visualization)
+- NumPy, SciPy, Pillow, tqdm
 
-## Installation
+## Installation (using uv - Recommended)
+
+This fork uses [uv](https://docs.astral.sh/uv/) for fast, reliable dependency management and includes [viser](https://viser.studio/) for interactive browser-based 3D visualization.
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/peasant98/graspnet-baseline.git
+cd graspnet-baseline
+```
+
+### 2. Create environment and install dependencies
+```bash
+uv venv --python 3.11
+uv sync
+```
+
+### 3. Install graspnetAPI
+```bash
+uv pip install scikit-learn
+SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True uv pip install git+https://github.com/graspnet/graspnetAPI.git
+```
+
+### 4. Compile CUDA extensions
+Make sure CUDA 12.8 is available. Adjust paths if your CUDA installation differs.
+```bash
+cd pointnet2
+PATH=/usr/local/cuda-12.8/bin:$PATH CUDA_HOME=/usr/local/cuda-12.8 uv pip install . --no-build-isolation
+cd ../knn
+PATH=/usr/local/cuda-12.8/bin:$PATH CUDA_HOME=/usr/local/cuda-12.8 uv pip install . --no-build-isolation
+cd ..
+```
+
+### 5. Download pretrained weights
+```bash
+mkdir -p logs/log_rs
+uv run gdown 1hd0G8LN6tRpi4742XOTEisbTXNZ-1jmk -O logs/log_rs/checkpoint.tar
+```
+
+## Installation (Legacy - using pip)
+
+<details>
+<summary>Click to expand legacy installation instructions</summary>
+
 Get the code.
 ```bash
 git clone https://github.com/graspnet/graspnet-baseline.git
@@ -51,6 +91,8 @@ git clone https://github.com/graspnet/graspnetAPI.git
 cd graspnetAPI
 pip install .
 ```
+
+</details>
 
 ## Tolerance Label Generation
 Tolerance labels are not included in the original dataset, and need additional generation. Make sure you have downloaded the orginal dataset from [GraspNet](https://graspnet.net/). The generation code is in [dataset/generate_tolerance_label.py](dataset/generate_tolerance_label.py). You can simply generate tolerance label by running the script: (`--dataset_root` and `--num_workers` should be specified according to your settings)
@@ -83,7 +125,20 @@ The pretrained weights can be downloaded from:
 `checkpoint-rs.tar` and `checkpoint-kn.tar` are trained using RealSense data and Kinect data respectively.
 
 ## Demo
-A demo program is provided for grasp detection and visualization using RGB-D images. You can refer to [command_demo.sh](command_demo.sh) to run the program. `--checkpoint_path` should be specified according to your settings (make sure you have downloaded the pretrained weights, we recommend the realsense model since it might transfer better). The output should be similar to the following example:
+A demo program is provided for grasp detection and visualization using RGB-D images. This fork uses **viser** for interactive browser-based 3D visualization.
+
+### Running the Demo
+```bash
+source .venv/bin/activate
+PATH=/usr/local/cuda-12.8/bin:$PATH CUDA_HOME=/usr/local/cuda-12.8 python demo.py --checkpoint_path logs/log_rs/checkpoint.tar
+```
+
+Then open **http://localhost:8080** in your browser to view the interactive 3D visualization with:
+- Point cloud of the scene
+- Top 50 grasp predictions (color-coded by score: blue=low, red=high)
+- Interactive camera controls
+
+You can also refer to [command_demo.sh](command_demo.sh) to run the program. `--checkpoint_path` should be specified according to your settings (make sure you have downloaded the pretrained weights, we recommend the realsense model since it might transfer better). The output should be similar to the following example:
 
 <div align="center">    
     <img src="doc/example_data/demo_result.png", width="480", alt="demo_result" />

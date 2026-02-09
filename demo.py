@@ -10,8 +10,11 @@ import argparse
 import importlib
 import scipy.io as scio
 from PIL import Image
+import time
 
 import torch
+import viser
+import trimesh
 from graspnetAPI import GraspGroup
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -104,12 +107,125 @@ def collision_detection(gg, cloud):
     gg = gg[~collision_mask]
     return gg
 
+def create_gripper_mesh(center, rotation, width, depth, score):
+    """
+    Create a gripper mesh for visualization.
+
+    Args:
+        center: (3,) grasp center position
+        rotation: (3,3) rotation matrix
+        width: gripper opening width
+        depth: grasp depth
+        score: grasp score for coloring (0-1)
+
+    Returns:
+        trimesh.Trimesh: gripper mesh
+    """
+    # Gripper dimensions (matching graspnetAPI)
+    finger_width = 0.004
+    finger_height = 0.004
+    finger_depth = depth
+    tail_length = 0.04
+    depth_base = 0.02
+
+    # Create gripper parts in local coordinates
+    # The gripper consists of: left finger, right finger, bottom, tail
+
+    # Left finger
+    left_finger = trimesh.creation.box([finger_depth, finger_width, finger_height])
+    left_finger.apply_translation([finger_depth / 2, -width / 2 - finger_width / 2, 0])
+
+    # Right finger
+    right_finger = trimesh.creation.box([finger_depth, finger_width, finger_height])
+    right_finger.apply_translation([finger_depth / 2, width / 2 + finger_width / 2, 0])
+
+    # Bottom connecting the fingers
+    bottom = trimesh.creation.box([finger_width, width + 2 * finger_width, finger_height])
+    bottom.apply_translation([0, 0, 0])
+
+    # Tail (support)
+    tail = trimesh.creation.box([tail_length, finger_width, finger_height])
+    tail.apply_translation([-tail_length / 2, 0, 0])
+
+    # Combine all parts
+    gripper = trimesh.util.concatenate([left_finger, right_finger, bottom, tail])
+
+    # Apply rotation and translation
+    transform = np.eye(4)
+    transform[:3, :3] = rotation
+    transform[:3, 3] = center
+    gripper.apply_transform(transform)
+
+    # Color based on score: interpolate from blue (low) to green to red (high)
+    if score < 0.5:
+        r = int(score * 2 * 255)
+        g = int(score * 2 * 255)
+        b = int((1 - score * 2) * 255)
+    else:
+        r = int(255)
+        g = int((1 - (score - 0.5) * 2) * 255)
+        b = 0
+
+    gripper.visual.face_colors = [r, g, b, 200]
+
+    return gripper
+
+
 def vis_grasps(gg, cloud):
+    """Visualize grasps using viser browser-based visualization."""
     gg.nms()
     gg.sort_by_score()
     gg = gg[:50]
-    grippers = gg.to_open3d_geometry_list()
-    o3d.visualization.draw_geometries([cloud, *grippers])
+
+    # Create viser server
+    server = viser.ViserServer()
+    print("Viser server started at http://localhost:8080")
+
+    # Extract point cloud data from Open3D object
+    points = np.asarray(cloud.points).astype(np.float32)
+    colors = (np.asarray(cloud.colors) * 255).astype(np.uint8)
+
+    # Add point cloud to scene
+    server.scene.add_point_cloud(
+        name="/scene/pointcloud",
+        points=points,
+        colors=colors,
+        point_size=0.003,
+    )
+
+    # Add each gripper mesh
+    for i in range(len(gg)):
+        center = gg.translations[i]
+        rotation = gg.rotation_matrices[i]
+        width = gg.widths[i]
+        depth = gg.depths[i]
+        score = gg.scores[i]
+
+        # Create gripper mesh
+        mesh = create_gripper_mesh(center, rotation, width, depth, score)
+
+        # Add to viser scene
+        server.scene.add_mesh_trimesh(
+            name=f"/scene/gripper_{i}",
+            mesh=mesh,
+        )
+
+    # Add coordinate frame for reference
+    server.scene.add_frame(
+        name="/scene/origin",
+        axes_length=0.1,
+        axes_radius=0.003,
+    )
+
+    print(f"Visualizing {len(gg)} grasps. Open http://localhost:8080 in your browser.")
+    print("Press Ctrl+C to exit.")
+
+    # Keep server running (blocking)
+    try:
+        while True:
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        print("\nShutting down viser server...")
 
 def demo(data_dir):
     net = get_net()
